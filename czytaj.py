@@ -1,5 +1,5 @@
 """czytaj — PDF faktur -> rejestr CSV/XLSX."""
-import csv, os, re, sys
+import csv, datetime, os, re, sys
 
 POLA = ["plik", "sprzedawca", "nip_sprzedawcy", "nr_faktury",
         "data_wystawienia", "termin_platnosci", "kwota_brutto", "komentarz"]
@@ -9,26 +9,35 @@ def die(msg, code=1):
     print(f"BŁĄD: {msg}", file=sys.stderr)
     sys.exit(code)
 
-# ============================================================ CZYTAJ (v0.1)
+# ============================================================ CZYTAJ (v0.2)
+class NoTekstu(Exception):
+    """PDF bez użytecznej warstwy tekstowej (zaszyfrowany, skan, pusty) — pomijalny, nie fatalny."""
+
+
 def tekst_z_pdf(sciezka):
     import fitz  # pymupdf
     doc = fitz.open(sciezka)
-    if doc.needs_pass:
-        die(f"{os.path.basename(sciezka)}: PDF zaszyfrowany (hasło) — pomijam")
-    tekst = "\n".join(page.get_text("text") for page in doc)
-    doc.close()
+    try:
+        if doc.needs_pass:
+            raise NoTekstu("zaszyfrowany (hasło)")
+        tekst = "\n".join(page.get_text("text") for page in doc)
+        if len(tekst.strip()) < 40:
+            raise NoTekstu("skan albo pusty PDF (brak warstwy tekstowej)")
+    finally:
+        doc.close()
     return tekst
 
 
 RE_NIP = re.compile(r"NIP[:\s]*(?:PL[-\s]?)?"
                     r"(\d{3}[- ]?\d{3}[- ]?\d{2}[- ]?\d{2}|\d{3}[- ]?\d{2}[- ]?\d{2}[- ]?\d{3}|\d{10})")
+# token kwoty: cyfry + spacje/nbsp/narrownbsp + kropki/przecinki (normalizacja w _norm_kwota)
+_TOKEN_KWOTA = r"(\d[\d \u00a0\u202f.,]*)"
 RE_KWOTA_STRICT = re.compile(
     r"(?:Do zapłaty|Razem do zapłaty|Wartość brutto|Kwota brutto|RAZEM BRUTTO)"
-    r"[^\d\n]{0,40}?(\d{1,9}[ \u00a0\u202f]?\d{0,3})(?:[.,](\d{2}))?(?:\s*zł)?", re.IGNORECASE)
+    r"[^\d\n]{0,40}?" + _TOKEN_KWOTA + r"(?:\s*zł)?", re.IGNORECASE)
 RE_KWOTA_LUZ = re.compile(
-    r"Razem(?!\s*netto)[^\d\n]{0,40}?(\d{1,9}[\s\u00a0\u202f]?\d{0,3})(?:[.,](\d{2}))?(?:\s*zł)?",
-    re.IGNORECASE)
-RE_DATA = re.compile(r"(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})")
+    r"Razem(?!\s*netto)[^\d\n]{0,40}?" + _TOKEN_KWOTA + r"(?:\s*zł)?", re.IGNORECASE)
+RE_DATA = re.compile(r"(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{4})")
 RE_DATA_ISO = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 _MIES = {"styczen":1,"january":1,"jan":1,"luty":2,"february":2,"feb":2,"marzec":3,"march":3,"mar":3,
          "kwiecien":4,"april":4,"apr":4,"maj":5,"may":5,"czerwiec":6,"june":6,"jun":6,
@@ -38,8 +47,10 @@ _MIES = {"styczen":1,"january":1,"jan":1,"luty":2,"february":2,"feb":2,"marzec":
 RE_DATA_EN1 = re.compile(r"(\d{1,2})\s+([A-Za-zęóąśłżźćń]+)\.?,?\s+(\d{4})")   # 12 October, 2025
 RE_DATA_EN2 = re.compile(r"([A-Za-zęóąśłżźćń]+)\.?\s+(\d{1,2}),?\s+(\d{4})")  # July 23, 2026 / Aug 05 2024
 RE_KWOTA_STRICT_EN = re.compile(
-    r"(?:Total Amount Due|Balance Due|Grand Total|Amount Due|Total)"
-    r"[^\d\n]{0,40}?([$€£])?"
+    # (?<![Ss]ub) -> "Subtotal" nie łapie "Total"; (?<!ub[-\s]) -> "Sub-Total" też nie
+    r"(?<![Ss]ub)(?<!ub[-\s])\b(?:Total Amount Due|Balance Due|Grand Total|Amount Due|Total)\b"
+    # gap może przekroczyć JEDEN przełam linii (tabela: etykieta w wierszu osobno od kwoty)
+    r"[^\d\n]{0,40}?\n?[^\d\n]{0,40}?([$€£])?"
     r"(\d{1,9}(?:[ ,\u00a0\u202f]\d{3})*)"
     r"(?:[.,](\d{2}))?"
     r"(?!\s*(?:dni|days|%))", re.IGNORECASE)
@@ -84,13 +95,55 @@ def _en_miesiec(nazwa):
     return _MIES.get(nazwa.lower().rstrip("ą").replace("ę", "e"), 0)
 
 
+def _norm_kwota(tok):
+    """Token kwoty -> 'cale,grosze' albo None. Zasady:
+    (a) '.' i ',' razem -> kropki = tysiące, ',' = grosze;  (b) tylko ',' -> grosze;
+    (c) tylko '.' -> po kropce 3 cyfry i wartość > 999 => tysiące, inaczej grosze;
+    (d) spacje/nbsp = tysiące. Wynik zawsze z groszami."""
+    tok = tok.replace("\u00a0", " ").replace("\u202f", " ").strip()
+    tok = tok.rstrip("., ")
+    if not tok or not re.search(r"\d", tok):
+        return None
+    grosze = "00"
+    cale = tok
+    if "," in cale:
+        cale, gr = cale.rsplit(",", 1)
+        if not re.fullmatch(r"\d{1,2}", gr):
+            return None
+        grosze = gr if len(gr) == 2 else gr + "0"
+    if "." in cale:
+        czesci = cale.split(".")
+        if "," in tok:
+            cale = cale.replace(".", "")          # (a) kropki = separator tysięcy
+        elif re.fullmatch(r"\d{1,3}(\.\d{3})*", cale) and int(cale.replace(".", "")) > 999:
+            cale = cale.replace(".", "")          # (c) kropka tysięcy: "1.234" / "1.234.567"
+        elif len(czesci) == 2 and re.fullmatch(r"\d{1,2}", czesci[1]):
+            cale, gr = czesci                     # kropka = grosze ("1234.56")
+            grosze = gr if len(gr) == 2 else gr + "0"
+        else:
+            return None                           # "31.02.2026"-like — nie kwota
+    cale = cale.replace(" ", "")
+    if not cale.isdigit():
+        return None
+    return f"{cale},{grosze}"
+
+
+def _data_ok(y, mo, d):
+    """True tylko gdy data istnieje w kalendarzu (odrzuca 31.02.2026 itp.)."""
+    try:
+        datetime.date(y, mo, d)
+        return True
+    except ValueError:
+        return False
+
+
 def znajdz_date(tekst, etykiety):
     for et in etykiety:
         # PL numeryczne: DD.MM.YYYY
         m = re.search(et + r"[^\d\n]{0,30}" + RE_DATA.pattern, tekst, re.IGNORECASE)
         if m:
             d, mo, y = (int(g) for g in m.groups()[-3:])
-            if 1 <= d <= 31 and 1 <= mo <= 12:
+            if 1 <= mo <= 12 and _data_ok(y, mo, d):
                 return f"{y:04d}-{mo:02d}-{d:02d}"
         # EN: 12 October, 2025 albo July 23, 2026
         m = re.search(et + r"[^\d\nA-Za-z]{0,30}" + RE_DATA_EN1.pattern, tekst, re.IGNORECASE)
@@ -102,13 +155,14 @@ def znajdz_date(tekst, etykiety):
                 d, mies, y = int(g[0]), _en_miesiec(g[1]), int(g[2])
             else:
                 mies, d, y = _en_miesiec(g[0]), int(g[1]), int(g[2])
-            if 1 <= d <= 31 and 1 <= mies <= 12:
+            if 1 <= mies <= 12 and _data_ok(y, mies, d):
                 return f"{y:04d}-{mies:02d}-{d:02d}"
         # ISO YYYY-MM-DD (nasze własne PDF-y z wystaw)
         m = re.search(et + r"[^\d\n]{0,30}" + RE_DATA_ISO.pattern, tekst, re.IGNORECASE)
         if m:
             y, mo, d = (int(g) for g in m.groups()[-3:])
-            return f"{y:04d}-{mo:02d}-{d:02d}"
+            if _data_ok(y, mo, d):
+                return f"{y:04d}-{mo:02d}-{d:02d}"
     return ""
 
 
@@ -119,19 +173,21 @@ def znajdz_kwote(tekst):
         if not m:
             continue
         grupy = m.groups()
-        # pozycja liczby zależy od tego, czy regex łapie symbol waluty
-        offset = 1 if waluta_grupa is not None else 0
-        zl = grupy[offset]
-        sym = (grupy[0] or "") if waluta_grupa is not None else ""
-        for sp in (" ", "\u00a0", "\u202f", ","):
-            zl = (zl or "").replace(sp, "")
-        if not zl:
-            continue
-        gr = grupy[offset + 1] or "00"
-        notka = ""
-        if sym in ("$", "€", "£"):
-            notka = f"waluta nie-PLN ({sym})"
-        return f"{zl},{gr}", notka
+        if waluta_grupa is not None:
+            # EN: grupy = (waluta, tysiące, grosze) — EN ma przecinek jako tysiące, osobna ścieżka
+            sym = grupy[0] or ""
+            zl = grupy[1] or ""
+            gr = grupy[2] or "00"
+            if not zl:
+                continue
+            for sp in (" ", "\u00a0", "\u202f", ","):
+                zl = zl.replace(sp, "")
+            kwota, notka = f"{zl},{gr}", (f"waluta nie-PLN ({sym})" if sym in ("$", "€", "£") else "")
+        else:
+            kwota, notka = _norm_kwota(grupy[0]), ""
+            if not kwota:
+                continue
+        return kwota, notka
     return "", ""
 
 
@@ -164,8 +220,6 @@ def znajdz_sprzedawce(tekst):
 
 def ekstrahuj(sciezka):
     tekst = tekst_z_pdf(sciezka)
-    if len(tekst.strip()) < 40:
-        return None
     r = {k: "" for k in POLA}
     r["plik"] = os.path.basename(sciezka)
     r["nip_sprzedawcy"] = znajdz_nip(tekst)
@@ -183,25 +237,39 @@ def ekstrahuj(sciezka):
 
 def dopisz_do_rejestru(sciezka_rejestru, wiersze, dry=False):
     os.makedirs(os.path.dirname(sciezka_rejestru) or ".", exist_ok=True)
-    nowy = not os.path.exists(sciezka_rejestru)
+    nowy = (not os.path.exists(sciezka_rejestru)) or os.path.getsize(sciezka_rejestru) == 0
     istniejace = set()
+    ma_bom = False
     if not nowy:
+        with open(sciezka_rejestru, "rb") as fb:
+            ma_bom = fb.read(3) == b"\xef\xbb\xbf"
         with open(sciezka_rejestru, newline="", encoding="utf-8-sig") as f:
             for w in csv.DictReader(f, delimiter=";"):
                 istniejace.add((w.get("plik", ""), w.get("nr_faktury", "")))
     if dry:
         return 0
-    with open(sciezka_rejestru, "a", newline="", encoding="utf-8") as f:
+    if nowy:
+        f = open(sciezka_rejestru, "w", newline="", encoding="utf-8-sig")
         w = csv.DictWriter(f, fieldnames=POLA, delimiter=";")
-        if nowy:
-            w.writeheader()
-        n = 0
-        for r in wiersze:
-            if (r["plik"], r["nr_faktury"]) in istniejace:
-                print(f"  (duplikat w rejestrze, pomijam: {r['plik']} / {r['nr_faktury'] or '—'})")
-                continue
-            w.writerow(r)
-            n += 1
+        w.writeheader()
+    elif ma_bom:
+        f = open(sciezka_rejestru, "a", newline="", encoding="utf-8")
+        w = csv.DictWriter(f, fieldnames=POLA, delimiter=";")
+    else:
+        # plik istnieje bez BOM-u: przepisz całość z BOM-em, żeby Excel PL czytał polskie znaki
+        with open(sciezka_rejestru, "r", newline="", encoding="utf-8-sig") as stary:
+            tresc = stary.read()
+        f = open(sciezka_rejestru, "w", newline="", encoding="utf-8-sig")
+        w = csv.DictWriter(f, fieldnames=POLA, delimiter=";")
+        f.write(tresc)
+    n = 0
+    for r in wiersze:
+        if (r["plik"], r["nr_faktury"]) in istniejace:
+            print(f"  (duplikat w rejestrze, pomijam: {r['plik']} / {r['nr_faktury'] or '—'})")
+            continue
+        w.writerow(r)
+        n += 1
+    f.close()
     return n
 
 
@@ -235,6 +303,10 @@ def cmd_czytaj(a):
             die(f"plik nie istnieje: {s}", 2)
         try:
             r = ekstrahuj(s)
+        except NoTekstu as e:
+            print(f"  {os.path.basename(s)}: {e} — pomijam")
+            skip += 1
+            continue
         except Exception as e:
             print(f"  {os.path.basename(s)}: błąd parsowania ({e})")
             skip += 1

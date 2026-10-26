@@ -47,7 +47,11 @@ def main():
     k.add_argument("--waliduj", action="store_true", help="waliduj względem schemy FA(3) (lokalnie)")
     k.set_defaults(fn="ksef")
 
-    a, rest = p.parse_known_args()
+    # backward-compat: pierwsza pozycja bez podkomendy = stara forma "czytaj *.pdf"
+    argv = sys.argv[1:]
+    if argv and argv[0] not in ("czytaj", "wystaw", "ksef") and not argv[0].startswith("-"):
+        argv = ["czytaj"] + argv
+    a, rest = p.parse_known_args(argv)
     if not a.cmd:
         from czytaj import run as czytaj_run
         return czytaj_run(argparse.Namespace(pliki=rest, katalog=None, rejestr=REJESTR_DFLT,

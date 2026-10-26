@@ -149,6 +149,9 @@ def cmd_wystaw(a):
         pdf.ln(2)
         pdf.multi_cell(0, 5, f"Uwagi: {dane['uwagi']}")
 
+    kat = os.path.dirname(os.path.abspath(a.wyjscie))
+    if kat:
+        os.makedirs(kat, exist_ok=True)
     pdf.output(a.wyjscie)
     print(f"OK: faktura PDF -> {a.wyjscie} (brutto {kwota_str(brutto, W)}; "
           f"sprawdź dane przed wysyłką — narzędzie nie jest systemem księgowym)")

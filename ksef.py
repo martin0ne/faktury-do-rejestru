@@ -1,8 +1,6 @@
 """ksef — dane JSON -> XML FA(3) + walidacja lokalna."""
 import datetime, os, re, sys
-import dane as _dane
-if not hasattr(_dane, "os"):
-    _dane.os = os  # dane.py używa os.path.exists bez importu os — zabezpieczenie
+import xml.etree.ElementTree as ET
 from dane import wczytaj_dane, policz
 
 def die(msg, code=1):
@@ -12,10 +10,18 @@ def die(msg, code=1):
 # ============================================================ KSEF (XML FA(3))
 NS_FA3 = "http://crd.gov.pl/wzor/2025/06/25/13775/"  # targetNamespace schemat/fa3.xsd
 
+# FormaPlatnosci: JSON -> kod wg schemy FA(3) (P_16). Nieznana -> '6' (przelew) + ostrzeżenie.
+FORMA_PLATNOSCI = {"przelew": "6", "gotówka": "1", "gotowka": "1",
+                   "karta": "2", "blik": "5", "pobranie": "4"}
+
 def ksef_nip(nip):
     nip = re.sub(r"\D", "", str(nip))
     if not re.fullmatch(r"[1-9]((\d[1-9])|([1-9]\d))\d{7}", nip):
         die(f"NIP nie przechodzi wzorca schemy FA(3): {nip}")
+    wagi = (6, 5, 7, 2, 3, 4, 5, 6, 7)
+    s = sum(int(c) * w for c, w in zip(nip[:9], wagi))
+    if s % 11 == 10 or s % 11 != int(nip[9]):
+        die(f"NIP nie przechodzi sumy kontrolnej (mod 11, wagi 6,5,7,2,3,4,5,6,7): {nip}")
     return nip
 
 
@@ -34,6 +40,16 @@ def cmd_ksef(a):
 
     if dane.get("waluta", "PLN") != "PLN":
         die("v0.2 generuje XML tylko dla waluty PLN (inne waluty = dodatkowe pola schemy; v0.3)")
+
+    if "0" in stawki:
+        die("stawka 0%: v0.2 nie mapuje do FA(3) (P_13_6_x wymaga rozróżnienia kraj/WDT/eksport) "
+            "— v0.3; użyj 'zw' lub popraw stawki")
+
+    forma = str(dane.get("forma_platnosci", "przelew")).strip().lower()
+    kod_formy = FORMA_PLATNOSCI.get(forma)
+    if kod_formy is None:
+        print(f"UWAGA: nieznana forma_platnosci {forma!r} — używam '6' (przelew)")
+        kod_formy = "6"
 
     def adres(kto):
         return f"<Adres><KodKraju>PL</KodKraju><AdresL1>{esc(kto['adres'])}</AdresL1></Adres>"
@@ -69,8 +85,8 @@ def cmd_ksef(a):
     termin = ""
     if dane.get("termin_platnosci"):
         termin = ("<Platnosc><TerminPlatnosci>"
-                  f"<Termin>{dane['termin_platnosci']}</Termin>"
-                  "</TerminPlatnosci><FormaPlatnosci>6</FormaPlatnosci></Platnosc>")
+                  f"<Termin>{esc(dane['termin_platnosci'])}</Termin>"
+                  f"</TerminPlatnosci><FormaPlatnosci>{kod_formy}</FormaPlatnosci></Platnosc>")
         if dane.get("rachunek"):
             nr_rb = re.sub(r"\s", "", str(dane["rachunek"]))
             termin = termin.replace("</Platnosc>",
@@ -90,8 +106,8 @@ def cmd_ksef(a):
         zwolnienie = "<P_19N>1</P_19N>"
 
     p6 = ""
-    if dane.get("data_sprzedazy") and dane["data_sprzedazy"] != dane["data_wystawienia"]:
-        p6 = f"<P_6>{dane['data_sprzedazy']}</P_6>"
+    if dane["data_sprzedazy"] != dane["data_wystawienia"]:
+        p6 = f"<P_6>{esc(dane['data_sprzedazy'])}</P_6>"
 
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Faktura xmlns="{NS_FA3}">
@@ -117,7 +133,7 @@ def cmd_ksef(a):
  </Podmiot2>
  <Fa>
   <KodWaluty>PLN</KodWaluty>
-  <P_1>{dane['data_wystawienia']}</P_1>
+  <P_1>{esc(dane['data_wystawienia'])}</P_1>
   <P_2>{esc(dane['numer'])}</P_2>
   {p6}
   {chr(10).join('  ' + s for s in sumy)}
@@ -135,11 +151,17 @@ def cmd_ksef(a):
 </Faktura>
 """
     xml = re.sub(r"\n\s*\n", "\n", xml)
+    katalog = os.path.dirname(os.path.abspath(a.wyjscie))
+    if katalog:
+        os.makedirs(katalog, exist_ok=True)
     with open(a.wyjscie, "w", encoding="utf-8") as f:
         f.write(xml)
     print(f"OK: XML FA(3) -> {a.wyjscie} (brutto {kw_xml(brutto)} PLN)")
     if a.waliduj:
         waliduj_xml(a.wyjscie)
+    else:
+        ET.parse(a.wyjscie)  # well-formedness — martwy/zepsuty XML nie przejdzie cicho
+        print("OK (well-formed; pełna walidacja XSD: dodaj --waliduj)")
     print("Pamiętaj: plik wgrywasz do KSeF SWOIM kanałem (system księgowy / KSeF web / API). "
           "Najpierw przetestuj w środowisku testowym MF.")
     return 0
@@ -159,8 +181,6 @@ def waliduj_xml(sciezka_xml, dir_schemat=None):
     for e in list(schema.error_log)[:10]:
         print(f"  WALIDACJA: linia {e.line}: {e.message}")
     die("XML nie przechodzi schemy FA(3) — nie wgrywaj takiego pliku do KSeF", 1)
-
-
 
 
 def run(a):

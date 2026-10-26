@@ -8,18 +8,30 @@
   "waluta": "PLN",
   "sprzedawca": {
     "nazwa": "MJ.OLDAK Przykład Sp. z o.o.",
-    "nip": "5252445507",
+    "nip": "5252445514",
     "adres": "ul. Kwiatowa 12, 00-001 Warszawa",
     "email": "biuro@przyklad.pl"
   },
   "nabywca": {
     "nazwa": "Firma Testowa S.A.",
-    "nip": "5271112233",
+    "nip": "5271112222",
     "adres": "ul. Lipowa 3, 00-002 Warszawa"
   },
   "pozycje": [
-    {"nazwa": "Usługa projektowa", "ilosc": 10, "jm": "szt.", "cena_netto": 150.00, "stawka_vat": 23},
-    {"nazwa": "Licencja roczna", "ilosc": 1, "jm": "szt.", "cena_netto": 800.00, "stawka_vat": 23}
+    {
+      "nazwa": "Usługa projektowa",
+      "ilosc": 10,
+      "jm": "szt.",
+      "cena_netto": 150.0,
+      "stawka_vat": 23
+    },
+    {
+      "nazwa": "Licencja roczna",
+      "ilosc": 1,
+      "jm": "szt.",
+      "cena_netto": 800.0,
+      "stawka_vat": 23
+    }
   ],
   "uwagi": "Faktura wygenerowana narzędziem faktury-do-rejestru (przykład)."
 }

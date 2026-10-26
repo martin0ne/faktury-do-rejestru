@@ -48,7 +48,7 @@ Duplikaty (ten sam plik + nr faktury) są pomijane; folder można przegryzać wi
   kolumnę `komentarz` z listą brakujących pól.
 - **`wystaw`**: fpdf2 + font z polskimi znakami (szuka DejaVu/Arial Unicode,
   można wskazać zmienną `FDR_FONT`), kwota słownie po polsku z odmianą,
-  obsługa stawek VAT 23/8/5/0/zw.
+  obsługa stawek VAT 23/22/8/7/5/4/3/zw, zaokrąglenia half-up.
 - **`ksef`**: generator XML FA(3), czyli struktury logicznej obowiązującej
   od 1.02.2026. Walidacja `--waliduj` przechodzi przeciwko **oficjalnej schemie
   XSD pobranej z crd.gov.pl** (folder `schemat/`, wersja 1-0E). Narzędzie NIE
@@ -66,8 +66,9 @@ Duplikaty (ten sam plik + nr faktury) są pomijane; folder można przegryzać wi
 \* EN-faktury w testach nie mają polskiego NIP; brak jest poprawnym wynikiem
 (komentarz w wierszu mówi „brak: nip_sprzedawcy; waluta nie-PLN ($)").
 
-**Brak pomiaru = brak deklaracji.** Uruchom na swoich fakturach (`--dry-run` nic
-nie zapisuje) i wpisz własny wiersz do tabeli, jeśli chcesz go deklarować.
+**Brak pomiaru = brak deklaracji.** Fixture-y są w `testy/` (HTML; PDF wygenerujesz
+Chrome headless). Uruchom na swoich fakturach (`--dry-run` nic nie zapisuje)
+i wpisz własny wiersz do tabeli, jeśli chcesz go deklarować.
 
 ## Czego to NIE robi
 
@@ -75,8 +76,9 @@ nie zapisuje) i wpisz własny wiersz do tabeli, jeśli chcesz go deklarować.
   z jawnym komunikatem, nie „cicho zgaduje".
 - **Waluta obca**: kwoty wyciąga, ale oznacza wiersz „waluta nie-PLN ($)"
   i nie przelicza kursów.
-- **XML KSeF**: faktura standardowa VAT, PLN, NIP PL po obu stronach, stawki
-  23/8/5/0/zw. Korekty (KOR), zaliczki, waluty obce, ryczałty (P_13_6_x) nie są obsługiwane.
+- **XML KSeF**: faktura standardowa VAT, PLN, NIP PL po obu stronach (suma
+  kontrolna NIP sprawdzana), stawki 23/22/8/7/5/4/3/zw. Stawka 0% i korekty
+  (KOR), zaliczki, waluty obce, ryczałty (P_13_6_x) nie są obsługiwane.
 - **Księgowania i decyzji księgowych**: rejestr roboczy, nie księga.
 - **Wysyłania czegokolwiek do sieci**: zero telemetrii, zero chmury, zero kont.
   Nawet `ksef --waliduj` działa wyłącznie na lokalnej kopii schemy.
@@ -100,6 +102,7 @@ nie zapisuje) i wpisz własny wiersz do tabeli, jeśli chcesz go deklarować.
 faktury_do_rejestru.py   # CLI (czytaj / wystaw / ksef)
 czytaj.py  wystaw.py  ksef.py  dane.py  slownie.py
 schemat/                 # FA(3) XSD 1-0E z crd.gov.pl + importy (walidacja lokalna)
+testy/                   # fixtures HTML -> PDF (Chrome headless) do własnych pomiarów
 przyklad-faktura.json    # dane wejściowe dla wystaw/ksef
 przyklad-rejestr.csv     # przykładowy wiersz rejestru (fikcyjny)
 ```
