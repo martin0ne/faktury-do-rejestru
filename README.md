@@ -36,6 +36,28 @@ python3 faktury_do_rejestru.py czytaj --dry-run faktura1.pdf
 ```
 
 Rejestr: CSV (średnik + UTF-8; Excel PL otwiera bez importu) i opcjonalnie XLSX.
+Domyślnie zapisuje się w `~/faktury-rejestr/rejestr.csv` — pełną ścieżkę
+dostaniesz w wyniku komendy. Zmienisz flagą `--rejestr`.
+
+### Faktury siedzą w mailach? (ostatnia mila)
+
+Narzędzie nie czyta poczty (zero kont, zero telemetrii — to feature), więc
+jedyny krok ręczny to zapisanie załączników do folderu:
+
+- **Mail (macOS):** zaznacz maile → Plik → Zapisz załączniki (albo przeciągnij)
+- **Outlook:** zaznacz maile → Zapisz → wszystkie załączniki
+- **Gmail:** zaznacz maile → menu ⋮ → Pobierz jako ZIP (załączniki w środku)
+- rozpakuj do `~/Faktury/` (`mkdir -p ~/Faktury` jeśli nie ma)
+
+Potem normalnie `czytaj --katalog ~/Faktury`.
+
+## Długowieczność: co jeśli autor przestanie pisać?
+
+- **Rejestr to CSV/Excel na Twoim dysku** — żyje bez tego programu, otworzysz
+  go w LibreOffice/Excelu zawsze.
+- **Licencja MIT** — każdy może przejąć, sforkować i rozwijać kod.
+- **Zero chmury i kont** — nie ma usługi, którą można by wyłączyć.
+- Eksport z rejestru do Excela robisz jednym `--xlsx`.
 **Domyślnie rejestr zapisuje się w `~/faktury-rejestr/rejestr.csv`** (folder tworzy się
 sam; ścieżkę zmienisz opcją `--rejestr` — pełna ścieżka jest wypisywana po zapisie).
 Duplikaty (ten sam plik + nr faktury) są pomijane; folder można przegryzać wielokrotnie.
