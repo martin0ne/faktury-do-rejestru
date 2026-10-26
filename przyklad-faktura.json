@@ -1,0 +1,25 @@
+{
+  "numer": "FV/2026/10/014",
+  "data_wystawienia": "2026-10-05",
+  "data_sprzedazy": "2026-10-05",
+  "termin_platnosci": "2026-10-20",
+  "forma_platnosci": "przelew",
+  "rachunek": "PL00 1111 2222 3333 4444 5555 6666",
+  "waluta": "PLN",
+  "sprzedawca": {
+    "nazwa": "MJ.OLDAK Przykład Sp. z o.o.",
+    "nip": "5252445507",
+    "adres": "ul. Kwiatowa 12, 00-001 Warszawa",
+    "email": "biuro@przyklad.pl"
+  },
+  "nabywca": {
+    "nazwa": "Firma Testowa S.A.",
+    "nip": "5271112233",
+    "adres": "ul. Lipowa 3, 00-002 Warszawa"
+  },
+  "pozycje": [
+    {"nazwa": "Usługa projektowa", "ilosc": 10, "jm": "szt.", "cena_netto": 150.00, "stawka_vat": 23},
+    {"nazwa": "Licencja roczna", "ilosc": 1, "jm": "szt.", "cena_netto": 800.00, "stawka_vat": 23}
+  ],
+  "uwagi": "Faktura wygenerowana narzędziem faktury-do-rejestru (przykład)."
+}

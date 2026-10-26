@@ -2,6 +2,10 @@
 __pycache__/
 *.pyc
 .env
-testy/realne/*.pdf
+# dane użytkownika NIE lądują w repo:
 *.csv
 !przyklad-rejestr.csv
+*.xlsx
+*.pdf
+!schemat/*
+testy/realne/
