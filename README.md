@@ -36,11 +36,29 @@ python3 faktury_do_rejestru.py czytaj --dry-run faktura1.pdf
 ```
 
 Rejestr: CSV (średnik + UTF-8; Excel PL otwiera bez importu) i opcjonalnie XLSX.
+**Domyślnie rejestr zapisuje się w `~/faktury-rejestr/rejestr.csv`** (folder tworzy się
+sam; ścieżkę zmienisz opcją `--rejestr` — pełna ścieżka jest wypisywana po zapisie).
 Duplikaty (ten sam plik + nr faktury) są pomijane; folder można przegryzać wielokrotnie.
+Plik bez numeru faktury i bez kwoty (np. skan dowodu osobistego) NIE trafia do rejestru —
+jest pomijany z komunikatem „nie wygląda na fakturę”.
 
 ## 5 minut od zera (bez programowania)
 
-1. Zainstaluj jedną komendą: `pip3 install pymupdf fpdf2 openpyxl lxml`
+0. Zdobądź program i Pythona (tylko za pierwszym razem):
+   - **Skąd wziąć kod:** na stronie repo (github.com/martin0ne/faktury-do-rejestru)
+     `git clone https://github.com/martin0ne/faktury-do-rejestru`, albo prościej:
+     zielony przycisk **Code → Download ZIP** i rozpakuj pobrany plik.
+   - **Gdzie wpisujesz komendy:** w **Terminal** (macOS: Launchpad → wpisz „Terminal”)
+     albo **PowerShell** (Windows: Start → wpisz „powershell”). Wpisujesz tam dokładnie
+     te same komendy co poniżej, każdą zatwierdzasz Enterem.
+   - **Wejdź do folderu z programem** (`cd` + nazwa folderu, np.
+     `cd faktury-do-rejestru` albo `cd faktury-do-rejestru-main` po ZIP-ie).
+   - **Potrzebny Python 3 z pip3.** Sprawdź komendą `python3 --version` (Windows
+     bywa też jako `py --version`). Jeśli nie masz — pobierz instalator ze strony
+     [python.org/downloads](https://www.python.org/downloads/) i zainstaluj.
+1. Zainstaluj jedną komendę: `pip3 install pymupdf fpdf2 openpyxl lxml`
+   Sprawdź, że działa: `python3 -c 'import fitz, fpdf, openpyxl, lxml; print("instalacja OK")'` —
+   ✅ instalacja jest dobra, gdy na końcu widzisz „instalacja OK” i nigdzie nie ma słowa ERROR.
 2. Pobierz `szablon-faktura.xlsx` i wypełnij w Excelu: arkusz „dane" (Twoje dane,
    klient) i „pozycje" (co sprzedajesz). Daty w formacie RRRR-MM-DD.
 3. Wygeneruj PDF: `python3 faktury_do_rejestru.py wystaw szablon-faktura.xlsx --wyjscie FV.pdf`
@@ -54,12 +72,14 @@ Jak wygląda wynik: `przyklad-faktura.pdf` w repo (dane fikcyjne).
 |---|---|
 | „brak fontu z polskimi znakami" | ustaw `FDR_FONT` na plik TTF z polskimi znakami (Linux: `fonts-dejavu`; Windows/macOS: Arial jest w systemie) |
 | „SKAN albo pusty PDF" | faktura to skan bez warstwy tekstowej; przepisz ręcznie albo poczekaj na OCR (v0.3) |
-| „zła suma kontrolna NIP" | literówka w NIP — narzędzie sprawdzające cyfrę kontrolną uratowało Cię przed błędem w KSeF |
+| „zła suma kontrolna NIP” | literówka w NIP. Dokładnie: sumę kontrolną (mod 11) sprawdza **tylko `ksef`** — z `--waliduj` i bez — i odrzuca błędny NIP, zanim wygeneruje plik; to uratowało Cię przed błędem w KSeF. `czytaj` i `wystaw` NIE sprawdzają sumy (rejestr roboczy): `czytaj` jedynie dopisze do wiersza komentarz „NIP zła suma kontrolna”, `wystaw` przepisze NIP taki, jaki wpisałeś |
 | CSV otwiera się w jednej kolumnie | w Excelu: Dane → Z tekstu/CSV → separator średnik |
 | „nieobsługiwana stawka VAT" | v0.2 przyjmuje 23/22/8/7/5/4/3/zw; stawka 0% w XML KSeF nie jest obsługiwana |
 | „nieistniejąca data" | data w przyszłej formie albo 31.02 — popraw w danych |
 
-Problemy i pomysły: zakładka Issues na GitHubie.
+Problemy i pomysły: zakładka **Issues** na GitHubie (spokojnie — można pisać po polsku)
+albo mail **biuro@mjoldak.pl**. Do zgłoszenia dołącz komendę, którą odpalałeś, i ostatnią
+linię komunikatu błędu.
 
 ## Jak to działa
 
@@ -68,7 +88,11 @@ Problemy i pomysły: zakładka Issues na GitHubie.
   EN `12 October, 2025` / `July 23, 2026` / ISO), kwota po etykietach („Do zapłaty",
   „Razem do zapłaty", „Balance Due", „Total", „Total Amount Due"…). Zero AI w v0.2 —
   deterministycznie; wyniki się różnią od układu faktury; dlatego każdy wiersz ma
-  kolumnę `komentarz` z listą brakujących pól.
+  kolumnę `komentarz` z listą brakujących pól. Wyciągnięty NIP dostaje sprawdzenie
+  sumy kontrolnej (mod 11) — wynik negatywny to **ostrzeżenie w komentarzu** („NIP
+  zła suma kontrolna”), nie odrzucenie wiersza; PDF-y bywają mylące. Plik, z którego
+  nie wyciągnięto ani numeru faktury, ani kwoty, nie trafia do rejestru („nie
+  wygląda na fakturę — pomijam”).
 - **`wystaw`**: fpdf2 + font z polskimi znakami (szuka DejaVu/Arial Unicode
   na macOS/Linux/Windows; można wskazać zmienną `FDR_FONT`), kwota słownie po polsku z odmianą,
   obsługa stawek VAT 23/22/8/7/5/4/3/zw, zaokrąglenia half-up.

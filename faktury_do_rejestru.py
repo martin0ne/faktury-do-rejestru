@@ -47,11 +47,21 @@ def main():
     k.add_argument("--waliduj", action="store_true", help="waliduj względem schemy FA(3) (lokalnie)")
     k.set_defaults(fn="ksef")
 
-    # backward-compat: pierwsza pozycja bez podkomendy = stara forma "czytaj *.pdf"
+    # backward-compat: pierwsza pozycja bez podkomendy = stara forma "czytaj *.pdf".
+    # Nieznane słowo, które nie jest plikiem PDF, to pewnie literówka w komendzie —
+    # nie przepuszczajmy jej cicho jako "pliku" (czytanie/xyzzy działały i ZAPISYWAŁY).
     argv = sys.argv[1:]
     if argv and argv[0] not in ("czytaj", "wystaw", "ksef") and not argv[0].startswith("-"):
+        if not argv[0].lower().endswith(".pdf"):
+            print(f"BŁĄD: nieznana komenda: {argv[0]} (masz na myśli „czytaj”?)\n"
+                  f"Dostępne: czytaj / wystaw / ksef — sprawdź --help", file=sys.stderr)
+            sys.exit(1)
         argv = ["czytaj"] + argv
     a, rest = p.parse_known_args(argv)
+    if rest:
+        print(f"BŁĄD: nieznane argumenty: {' '.join(rest)} (sprawdź --help — "
+              f"program nie zgaduje flag i ignorowanie by zepsuło wynik)", file=sys.stderr)
+        sys.exit(1)
     if not a.cmd:
         from czytaj import run as czytaj_run
         return czytaj_run(argparse.Namespace(pliki=rest, katalog=None, rejestr=REJESTR_DFLT,

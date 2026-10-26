@@ -56,6 +56,18 @@ RE_KWOTA_STRICT_EN = re.compile(
     r"(?!\s*(?:dni|days|%))", re.IGNORECASE)
 
 
+def nip_suma_ok(nip):
+    """Suma kontrolna NIP (mod 11, wagi 6,5,7,2,3,4,5,6,7) — True/False.
+
+    W czytaj to OSTRZEŻENIE, nie odrzucenie: ekstrakcja z PDF bywa myląca,
+    więc błędna suma trafia do komentarza wiersza, a rejestr działa dalej."""
+    if not re.fullmatch(r"\d{10}", nip or ""):
+        return False
+    wagi = (6, 5, 7, 2, 3, 4, 5, 6, 7)
+    s = sum(int(c) * w for c, w in zip(nip[:9], wagi))
+    return not (s % 11 == 10 or s % 11 != int(nip[9]))
+
+
 def znajdz_nip(tekst):
     m = re.search(r"Sprzedawca", tekst)
     obszar = tekst[m.start():m.start() + 400] if m else tekst
@@ -83,6 +95,11 @@ def znajdz_nr_fv(tekst):
     m = re.search(r"^\s*(FV[/\-][A-Z0-9/_.\-]{2,28})\s*$", tekst, re.MULTILINE)
     if m:
         return m.group(1)
+    # układ dwuwierszowy: „Faktura VAT" w jednym wierszu, „nr FV/..." w następnym
+    m = re.search(r"Faktura[^\n]{0,40}?\n\s*(?:nr\.?|Numer)\s*[:\-]?\s*"
+                  r"([A-Z0-9][A-Z0-9/\\\-_.]{2,30})", tekst, re.IGNORECASE | re.MULTILINE)
+    if m:
+        return m.group(1).rstrip(".,;")
     # EN: "Invoice No: 00000001" / "Invoice #: INV-2026-7892"
     m = re.search(r"Invoice\s*(?:No\.?|#|Number)\s*[:\-]?\s*([A-Z0-9][A-Z0-9/\-_.]{2,30})",
                   tekst, re.IGNORECASE)
@@ -232,6 +249,9 @@ def ekstrahuj(sciezka):
     r["komentarz"] = ("brak: " + ", ".join(braki)) if braki else "OK"
     if notka_waluty:
         r["komentarz"] = (r["komentarz"] + "; " if r["komentarz"] else "") + notka_waluty
+    # ostrzeżenie, nie odrzucenie: PDF-y bywają mylące, NIP i tak trafia do rejestru roboczego
+    if r["nip_sprzedawcy"] and not nip_suma_ok(r["nip_sprzedawcy"]):
+        r["komentarz"] = (r["komentarz"] + "; " if r["komentarz"] else "") + "NIP zła suma kontrolna"
     return r
 
 
@@ -292,8 +312,10 @@ def cmd_czytaj(a):
     if a.katalog:
         if not os.path.isdir(a.katalog):
             die(f"brak katalogu: {a.katalog}", 2)
-        sciezki += sorted(os.path.join(a.katalog, f) for f in os.listdir(a.katalog)
-                          if f.lower().endswith(".pdf"))
+        pliki_pdf = [f for f in os.listdir(a.katalog) if f.lower().endswith(".pdf")]
+        if not pliki_pdf:
+            die(f"folder {a.katalog} nie zawiera plików PDF", 2)
+        sciezki += sorted(os.path.join(a.katalog, f) for f in pliki_pdf)
     sciezki = [s for s in sciezki if s.lower().endswith(".pdf")]
     if not sciezki:
         die("podaj pliki PDF albo --katalog", 2)
@@ -315,6 +337,11 @@ def cmd_czytaj(a):
             print(f"  {os.path.basename(s)}: SKAN albo pusty PDF (brak warstwy tekstowej) — pomijam")
             skip += 1
             continue
+        # to nie faktura (np. dowód osobisty): bez numeru I bez kwoty nie ma czego wpisywać
+        if not r["nr_faktury"] and not r["kwota_brutto"]:
+            print(f"  {os.path.basename(s)}: nie wygląda na fakturę — pomijam (brak numeru i kwoty)")
+            skip += 1
+            continue
         wiersze.append(r)
         print(f"  {r['plik']}: {r['nr_faktury'] or '—'} | {r['sprzedawca'][:40] or '—'} | "
               f"NIP {r['nip_sprzedawcy'] or '—'} | {r['kwota_brutto'] or '—'} zł | "
@@ -325,11 +352,11 @@ def cmd_czytaj(a):
     if a.dry_run:
         print(f"(dry-run: nic nie zapisano; {len(wiersze)} faktur odczytanych)")
     else:
-        print(f"OK: dopisano {n}/{len(wiersze)} faktur -> {a.rejestr} (pominięte: {skip})")
+        print(f"OK: dopisano {n}/{len(wiersze)} faktur -> {os.path.abspath(a.rejestr)} (pominięte: {skip})")
         if a.xlsx:
             x = os.path.splitext(a.rejestr)[0] + ".xlsx"
             zapisz_xlsx(x, wiersze)
-            print(f"OK: rejestr Excel -> {x} (uwaga: --xlsx zapisuje TYLKO świeżo przeczytane faktury)")
+            print(f"OK: rejestr Excel -> {os.path.abspath(x)} (uwaga: --xlsx zapisuje TYLKO świeżo przeczytane faktury)")
     return 0
 
 
