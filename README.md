@@ -26,7 +26,7 @@ python3 faktury_do_rejestru.py czytaj --katalog ~/Faktury
 python3 faktury_do_rejestru.py czytaj --katalog ~/Faktury --xlsx
 
 # wystawienie faktury z danych
-python3 faktury_do_rejestru.py wystaw przyklad-faktura.json --wyjscie FV.pdf
+python3 faktury_do_rejestru.py wystaw szablon-faktura.xlsx --wyjscie FV.pdf
 
 # plik XML FA(3) do KSeF + walidacja lokalna względem schemy
 python3 faktury_do_rejestru.py ksef przyklad-faktura.json --wyjscie FV.xml --waliduj
@@ -38,6 +38,29 @@ python3 faktury_do_rejestru.py czytaj --dry-run faktura1.pdf
 Rejestr: CSV (średnik + UTF-8; Excel PL otwiera bez importu) i opcjonalnie XLSX.
 Duplikaty (ten sam plik + nr faktury) są pomijane; folder można przegryzać wielokrotnie.
 
+## 5 minut od zera (bez programowania)
+
+1. Zainstaluj jedną komendą: `pip3 install pymupdf fpdf2 openpyxl lxml`
+2. Pobierz `szablon-faktura.xlsx` i wypełnij w Excelu: arkusz „dane" (Twoje dane,
+   klient) i „pozycje" (co sprzedajesz). Daty w formacie RRRR-MM-DD.
+3. Wygeneruj PDF: `python3 faktury_do_rejestru.py wystaw szablon-faktura.xlsx --wyjscie FV.pdf`
+4. Potrzebujesz pliku do KSeF? `python3 faktury_do_rejestru.py ksef szablon-faktura.xlsx --wyjscie FV.xml --waliduj`
+
+Jak wygląda wynik: `przyklad-faktura.pdf` w repo (dane fikcyjne).
+
+## Gdy coś nie działa
+
+| Objaw | Co zrobić |
+|---|---|
+| „brak fontu z polskimi znakami" | ustaw `FDR_FONT` na plik TTF z polskimi znakami (Linux: `fonts-dejavu`; Windows/macOS: Arial jest w systemie) |
+| „SKAN albo pusty PDF" | faktura to skan bez warstwy tekstowej; przepisz ręcznie albo poczekaj na OCR (v0.3) |
+| „zła suma kontrolna NIP" | literówka w NIP — narzędzie sprawdzające cyfrę kontrolną uratowało Cię przed błędem w KSeF |
+| CSV otwiera się w jednej kolumnie | w Excelu: Dane → Z tekstu/CSV → separator średnik |
+| „nieobsługiwana stawka VAT" | v0.2 przyjmuje 23/22/8/7/5/4/3/zw; stawka 0% w XML KSeF nie jest obsługiwana |
+| „nieistniejąca data" | data w przyszłej formie albo 31.02 — popraw w danych |
+
+Problemy i pomysły: zakładka Issues na GitHubie.
+
 ## Jak to działa
 
 - **`czytaj`**: tekst z PDF przez PyMuPDF, potem **heurystyki** (regexy): NIP w
@@ -46,8 +69,8 @@ Duplikaty (ten sam plik + nr faktury) są pomijane; folder można przegryzać wi
   „Razem do zapłaty", „Balance Due", „Total", „Total Amount Due"…). Zero AI w v0.2 —
   deterministycznie; wyniki się różnią od układu faktury; dlatego każdy wiersz ma
   kolumnę `komentarz` z listą brakujących pól.
-- **`wystaw`**: fpdf2 + font z polskimi znakami (szuka DejaVu/Arial Unicode,
-  można wskazać zmienną `FDR_FONT`), kwota słownie po polsku z odmianą,
+- **`wystaw`**: fpdf2 + font z polskimi znakami (szuka DejaVu/Arial Unicode
+  na macOS/Linux/Windows; można wskazać zmienną `FDR_FONT`), kwota słownie po polsku z odmianą,
   obsługa stawek VAT 23/22/8/7/5/4/3/zw, zaokrąglenia half-up.
 - **`ksef`**: generator XML FA(3), czyli struktury logicznej obowiązującej
   od 1.02.2026. Walidacja `--waliduj` przechodzi przeciwko **oficjalnej schemie
@@ -105,6 +128,8 @@ schemat/                 # FA(3) XSD 1-0E z crd.gov.pl + importy (walidacja loka
 testy/                   # fixtures HTML -> PDF (Chrome headless) do własnych pomiarów
 przyklad-faktura.json    # dane wejściowe dla wystaw/ksef
 przyklad-rejestr.csv     # przykładowy wiersz rejestru (fikcyjny)
+szablon-faktura.xlsx     # template do wypełnienia w Excelu (wejście dla wystaw/ksef)
+przyklad-faktura.pdf     # tak wygląda wynik (dane fikcyjne)
 ```
 
 ## Licencja

@@ -2,10 +2,12 @@
 __pycache__/
 *.pyc
 .env
-# dane użytkownika NIE lądują w repo:
+# dane użytkownika NIE lądują w repo (wyjątki: wzory + przykłady):
 *.csv
 !przyklad-rejestr.csv
 *.xlsx
+!szablon-faktura.xlsx
 *.pdf
+!przyklad-faktura.pdf
 !schemat/*
 testy/realne/

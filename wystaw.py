@@ -19,6 +19,10 @@ def znajdz_font():
     except ImportError:
         pass
     kandydaci += [
+        # Windows (fpdf2 działa; Arial/Segoe UI/Tahoma mają polskie znaki)
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/tahoma.ttf",
         "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",

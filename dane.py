@@ -26,13 +26,131 @@ def _kwota_ok(nazwa, v, p):
         die(f"pozycja: pole {nazwa} nie może być ujemne: {v!r} ({p})", 2)
     return v
 
+
+def _norm_nip(v):
+    """NIP z Excela może wylecieć jako liczba — wróć do stringa."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, str):
+        return v.strip()
+    return v
+
+
+def _norm_vat(v):
+    """stawka_vat: int albo 'zw'. Excel da int/float/str — normalizuję."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, float) and v.is_integer():
+        return int(v)
+    if isinstance(v, str):
+        return v.strip().lower()
+    return v
+
+
+def _norm_komorka_str(v):
+    """Wartość z Excela -> string dla pól daty/tekstowych (data jako datetime -> ISO)."""
+    if isinstance(v, datetime.datetime):
+        return v.date().isoformat()
+    if isinstance(v, datetime.date):
+        return v.isoformat()
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v.strip()
+    return v
+
+
+# ============================================================ Wczytanie XLSX
+POLA_KTOREGO = ("nazwa", "nip", "adres", "email")
+POLA_DANE = ("numer", "data_wystawienia", "data_sprzedazy", "termin_platnosci",
+             "forma_platnosci", "rachunek", "waluta", "uwagi")
+NAGLOWKI_POZYCJI = ("nazwa", "ilosc", "jm", "cena_netto", "stawka_vat")
+
+
+def _wczytaj_xlsx(sciezka):
+    try:
+        import openpyxl
+    except ImportError:
+        die("brak biblioteki openpyxl — zainstaluj: pip3 install openpyxl", 2)
+    wb = openpyxl.load_workbook(sciezka, data_only=True)
+    brak = [s for s in ("dane", "pozycje") if s not in wb.sheetnames]
+    if brak:
+        die(f"plik XLSX musi mieć arkusze 'dane' i 'pozycje' (wzór: szablon-faktura.xlsx), "
+            f"brakuje: {', '.join(brak)}", 2)
+
+    # arkusz "dane": pary klucz|wartość w kolumnach A|B
+    dane, kto = {}, {}
+    for row in wb["dane"].iter_rows(min_col=1, max_col=2, values_only=True):
+        klucz = row[0] if row else None
+        wart = row[1] if len(row) > 1 else None
+        if klucz is None or not str(klucz).strip():
+            continue
+        klucz = str(klucz).strip()
+        if klucz.endswith(POLA_KTOREGO) and klucz.startswith(("sprzedawca_", "nabywca_")):
+            kto_ob, pod = klucz.split("_", 1)
+            kto.setdefault(kto_ob, {})[pod] = "" if wart is None else wart
+        elif klucz in POLA_DANE:
+            dane[klucz] = wart
+        else:
+            print(f"UWAGA: pomijam nieznany klucz w arkuszu 'dane': {klucz!r}")
+    if not kto:
+        die("w arkuszu 'dane' brakuje pól sprzedawca_nazwa/nip/adres i nabywca_nazwa/nip/adres "
+            "(wzór: szablon-faktura.xlsx)", 2)
+    dane.update(kto)
+    for kto_ob in ("sprzedawca", "nabywca"):
+        if kto_ob in dane:
+            for pod, v in list(dane[kto_ob].items()):
+                if pod == "nip":
+                    dane[kto_ob][pod] = _norm_nip(v)
+                else:
+                    dane[kto_ob][pod] = _norm_komorka_str(v)
+    for k in POLA_DANE:
+        if k in dane:
+            dane[k] = _norm_komorka_str(dane[k])
+
+    # arkusz "pozycje": nagłówek + wiersze pozycji (puste wiersze pomijam)
+    wiersze = list(wb["pozycje"].iter_rows(values_only=True))
+    if not wiersze:
+        die("arkusz 'pozycje' jest pusty (wzór: szablon-faktura.xlsx)", 2)
+    nagl = [str(c).strip().lower() if c is not None else "" for c in wiersze[0]]
+    if tuple(nagl[:len(NAGLOWKI_POZYCJI)]) != NAGLOWKI_POZYCJI:
+        die(f"arkusz 'pozycje': zły nagłówek: {nagl} (musi być: "
+            f"{' | '.join(NAGLOWKI_POZYCJI)})", 2)
+    pozycje = []
+    for w in wiersze[1:]:
+        if w is None or all(c is None or str(c).strip() == "" for c in w):
+            continue
+        pozycje.append(dict(zip(NAGLOWKI_POZYCJI, w)))
+    if not pozycje:
+        die("arkusz 'pozycje': nie ma żadnej pozycji pod nagłówkiem", 2)
+    for p in pozycje:
+        p["stawka_vat"] = _norm_vat(p.get("stawka_vat"))
+        for k in ("nazwa", "jm"):
+            if isinstance(p.get(k), str):
+                p[k] = p[k].strip()
+    dane["pozycje"] = pozycje
+    return dane
+
+
 def wczytaj_dane(sciezka):
     if not os.path.exists(sciezka):
         die(f"plik nie istnieje: {sciezka}", 2)
-    if not sciezka.lower().endswith(".json"):
-        die("dane wystawienia przyjmuję jako JSON (wzór: przyklad-faktura.json)", 2)
-    with open(sciezka, encoding="utf-8") as f:
-        dane = json.load(f)
+    ext = os.path.splitext(sciezka)[1].lower()
+    if ext == ".json":
+        with open(sciezka, encoding="utf-8") as f:
+            try:
+                dane = json.load(f)
+            except json.JSONDecodeError as e:
+                die(f"plik JSON jest uszkodzony ({e}) — wzór: przyklad-faktura.json", 2)
+    elif ext == ".xlsx":
+        dane = _wczytaj_xlsx(sciezka)
+    else:
+        die("przyjmuję JSON lub XLSX (wzory: przyklad-faktura.json, szablon-faktura.xlsx)", 2)
+    # te same walidacje dla JSON i XLSX:
     for klucz in ["sprzedawca", "nabywca", "numer", "data_wystawienia", "pozycje"]:
         if not dane.get(klucz):
             die(f"w danych brakuje pola: {klucz}", 2)
